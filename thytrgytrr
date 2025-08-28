@@ -1,0 +1,780 @@
+-- Advanced Roblox Hack Suite with Rayfield UI - Optimized Version
+-- Features: Optimized Aimbot, ESP, Wallhack with reduced lag, Bot Detection
+
+-- Load Rayfield UI Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+-- Variables
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+local aimbotEnabled = false
+local espEnabled = false
+local wallhackEnabled = false
+local aimbotMode = "FOV" -- "FOV" or "Closest"
+local aimSmoothness = 5
+local aimbotMethod = "Tween" -- "Tween" or "Instant"
+local espEnemyColor = Color3.fromRGB(255, 0, 0)
+local espTeamColor = true
+local maxEspDistance = 1000
+local espBotsEnabled = true
+local aimbotBotsEnabled = true
+local aimbotKeybind = "Q" -- Default keybind for aimbot
+local aimbotHoldToAim = false
+local aimbotTargetPart = "Head" -- Head, HumanoidRootPart, or Random
+local aimbotFOVVisible = true
+local silentAimEnabled = false
+local silentAimHitChance = 100
+
+-- Performance optimization variables
+local cachedBots = {}
+local lastBotUpdate = 0
+local botUpdateInterval = 1 -- Update bots every 1 second
+local espFrameSkip = 0
+local espUpdateInterval = 3
+local aimbotFrameSkip = 0
+local aimbotUpdateInterval = 2
+local aimbotActive = false
+local currentTarget = nil
+
+-- FOV Circle
+local fovCircle = Drawing.new("Circle")
+fovCircle.Visible = false
+fovCircle.Radius = 80
+fovCircle.Color = Color3.fromRGB(255, 255, 255)
+fovCircle.Thickness = 2
+fovCircle.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+fovCircle.Transparency = 1
+fovCircle.Filled = false
+fovCircle.NumSides = 30 -- Reduced for performance
+
+-- ESP Table
+local espTable = {}
+
+-- Create Window
+local Window = Rayfield:CreateWindow({
+    Name = "Optimized Roblox Hack Suite",
+    LoadingTitle = "Optimized Roblox Hack Suite",
+    LoadingSubtitle = "Performance Enhanced",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "RobloxHacks",
+        FileName = "Config.json"
+    },
+    KeySystem = false,
+})
+
+-- Aimbot Tab
+local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
+local AimbotSection = AimbotTab:CreateSection("Aimbot Settings")
+
+local AimbotToggle = AimbotTab:CreateToggle({
+    Name = "Enable Aimbot",
+    CurrentValue = false,
+    Flag = "AimbotToggle",
+    Callback = function(Value)
+        aimbotEnabled = Value
+        fovCircle.Visible = Value and aimbotFOVVisible
+    end,
+})
+
+local AimbotModeDropdown = AimbotTab:CreateDropdown({
+    Name = "Aimbot Mode",
+    Options = {"FOV", "Closest"},
+    CurrentOption = "FOV",
+    Flag = "AimbotMode",
+    Callback = function(Option)
+        aimbotMode = Option
+    end,
+})
+
+local FOVSlider = AimbotTab:CreateSlider({
+    Name = "FOV Size",
+    Range = {20, 300},
+    Increment = 5,
+    Suffix = "units",
+    CurrentValue = 80,
+    Flag = "FOVSize",
+    Callback = function(Value)
+        fovCircle.Radius = Value
+    end,
+})
+
+local SmoothnessSlider = AimbotTab:CreateSlider({
+    Name = "Aimbot Smoothness",
+    Range = {1, 10},
+    Increment = 1,
+    Suffix = "level",
+    CurrentValue = 5,
+    Flag = "AimbotSmoothness",
+    Callback = function(Value)
+        aimSmoothness = Value
+    end,
+})
+
+local TargetPartDropdown = AimbotTab:CreateDropdown({
+    Name = "Target Part",
+    Options = {"Head", "HumanoidRootPart", "Random"},
+    CurrentOption = "Head",
+    Flag = "TargetPart",
+    Callback = function(Option)
+        aimbotTargetPart = Option
+    end,
+})
+
+local AimbotKeybind = AimbotTab:CreateKeybind({
+    Name = "Aimbot Keybind",
+    CurrentKeybind = "Q",
+    HoldToInteract = false,
+    Flag = "AimbotKeybind",
+    Callback = function(Key)
+        aimbotKeybind = Key
+    end,
+})
+
+local HoldToAimToggle = AimbotTab:CreateToggle({
+    Name = "Hold to Aim",
+    CurrentValue = false,
+    Flag = "HoldToAim",
+    Callback = function(Value)
+        aimbotHoldToAim = Value
+    end,
+})
+
+local FOVVisibleToggle = AimbotTab:CreateToggle({
+    Name = "Show FOV Circle",
+    CurrentValue = true,
+    Flag = "FOVVisible",
+    Callback = function(Value)
+        aimbotFOVVisible = Value
+        fovCircle.Visible = aimbotEnabled and Value
+    end,
+})
+
+local SilentAimToggle = AimbotTab:CreateToggle({
+    Name = "Silent Aim",
+    CurrentValue = false,
+    Flag = "SilentAim",
+    Callback = function(Value)
+        silentAimEnabled = Value
+    end,
+})
+
+local HitChanceSlider = AimbotTab:CreateSlider({
+    Name = "Silent Aim Hit Chance",
+    Range = {0, 100},
+    Increment = 5,
+    Suffix = "%",
+    CurrentValue = 100,
+    Flag = "HitChance",
+    Callback = function(Value)
+        silentAimHitChance = Value
+    end,
+})
+
+-- Visuals Tab
+local VisualsTab = Window:CreateTab("Visuals", 4483362458)
+local VisualsSection = VisualsTab:CreateSection("Visual Settings")
+
+local ESPToggle = VisualsTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = false,
+    Flag = "ESPToggle",
+    Callback = function(Value)
+        espEnabled = Value
+        if not Value then
+            for _, esp in pairs(espTable) do
+                if esp then
+                    esp.box.Visible = false
+                    esp.name.Visible = false
+                    esp.healthBar.Visible = false
+                    esp.healthText.Visible = false
+                    esp.distance.Visible = false
+                end
+            end
+        end
+    end,
+})
+
+local ESPDistanceSlider = VisualsTab:CreateSlider({
+    Name = "ESP Distance",
+    Range = {100, 2000},
+    Increment = 50,
+    Suffix = "studs",
+    CurrentValue = 1000,
+    Flag = "ESPDistance",
+    Callback = function(Value)
+        maxEspDistance = Value
+    end,
+})
+
+local ESPColorPicker = VisualsTab:CreateColorPicker({
+    Name = "Enemy ESP Color",
+    Color = Color3.fromRGB(255, 0, 0),
+    Flag = "ESPEnemyColor",
+    Callback = function(Value)
+        espEnemyColor = Value
+    end
+})
+
+local TeamColorToggle = VisualsTab:CreateToggle({
+    Name = "Team Color ESP",
+    CurrentValue = true,
+    Flag = "TeamColorESP",
+    Callback = function(Value)
+        espTeamColor = Value
+    end,
+})
+
+-- Performance Settings
+local PerformanceSection = VisualsTab:CreateSection("Performance Settings")
+
+local ESPUpdateSlider = VisualsTab:CreateSlider({
+    Name = "ESP Update Rate",
+    Range = {1, 10},
+    Increment = 1,
+    Suffix = "frames",
+    CurrentValue = 3,
+    Flag = "ESPUpdateRate",
+    Callback = function(Value)
+        espUpdateInterval = Value
+    end,
+})
+
+local AimbotUpdateSlider = VisualsTab:CreateSlider({
+    Name = "Aimbot Update Rate",
+    Range = {1, 10},
+    Increment = 1,
+    Suffix = "frames",
+    CurrentValue = 2,
+    Flag = "AimbotUpdateRate",
+    Callback = function(Value)
+        aimbotUpdateInterval = Value
+    end,
+})
+
+-- Bot Settings
+local BotSection = VisualsTab:CreateSection("Bot Settings")
+
+local ESPBotsToggle = VisualsTab:CreateToggle({
+    Name = "ESP for Bots",
+    CurrentValue = true,
+    Flag = "ESPBotsToggle",
+    Callback = function(Value)
+        espBotsEnabled = Value
+        cachedBots = {}
+        lastBotUpdate = 0
+    end,
+})
+
+local AimbotBotsToggle = VisualsTab:CreateToggle({
+    Name = "Aimbot for Bots",
+    CurrentValue = true,
+    Flag = "AimbotBotsToggle",
+    Callback = function(Value)
+        aimbotBotsEnabled = Value
+        cachedBots = {}
+        lastBotUpdate = 0
+    end,
+})
+
+-- Misc Tab
+local MiscTab = Window:CreateTab("Miscellaneous", 4483362458)
+local MiscSection = MiscTab:CreateSection("Miscellaneous Settings")
+
+local BotUpdateIntervalSlider = MiscTab:CreateSlider({
+    Name = "Bot Update Interval",
+    Range = {1, 10},
+    Increment = 1,
+    Suffix = "seconds",
+    CurrentValue = 1,
+    Flag = "BotUpdateInterval",
+    Callback = function(Value)
+        botUpdateInterval = Value
+    end,
+})
+
+local AutoUpdateBotsToggle = MiscTab:CreateToggle({
+    Name = "Auto Update Bots",
+    CurrentValue = true,
+    Flag = "AutoUpdateBots",
+    Callback = function(Value)
+        if Value then
+            autoUpdateBots = true
+        else
+            autoUpdateBots = false
+        end
+    end,
+})
+
+local UpdateBotsButton = MiscTab:CreateButton({
+    Name = "Update Bots Now",
+    Callback = function()
+        updateBotCache()
+    end,
+})
+
+-- Functions
+local function getTeamColor(targetPlayer)
+    if player.Team and targetPlayer.Team and espTeamColor then
+        if player.Team == targetPlayer.Team then
+            return Color3.fromRGB(0, 255, 0)
+        else
+            return espEnemyColor
+        end
+    end
+    return espEnemyColor
+end
+
+-- Optimized bot detection with caching
+local function updateBotCache()
+    local currentTime = tick()
+    if currentTime - lastBotUpdate < botUpdateInterval then
+        return
+    end
+    
+    lastBotUpdate = currentTime
+    cachedBots = {}
+    
+    if not espBotsEnabled and not aimbotBotsEnabled then
+        return
+    end
+    
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and not Players:GetPlayerFromCharacter(obj) then
+            local humanoid = obj:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                if obj:FindFirstChild("Bot") or obj:FindFirstChild("NPC") or 
+                   obj.Name:lower():find("bot") or obj.Name:lower():find("npc") or
+                   (humanoid.DisplayName and humanoid.DisplayName:lower():find("bot")) then
+                    table.insert(cachedBots, obj)
+                end
+            end
+        end
+    end
+end
+
+local function isBot(character)
+    for _, bot in pairs(cachedBots) do
+        if bot == character then
+            return true
+        end
+    end
+    return false
+end
+
+local function getBotTeam(character)
+    return nil
+end
+
+local function createESP(character, targetPlayer)
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    
+    local esp = {}
+    
+    esp.box = Drawing.new("Square")
+    esp.box.Visible = false
+    esp.box.Color = getTeamColor(targetPlayer)
+    esp.box.Thickness = 1
+    esp.box.Filled = false
+    
+    esp.name = Drawing.new("Text")
+    esp.name.Visible = false
+    esp.name.Color = getTeamColor(targetPlayer)
+    esp.name.Size = 14
+    esp.name.Center = true
+    esp.name.Outline = true
+    esp.name.Font = 2
+    
+    esp.healthBar = Drawing.new("Square")
+    esp.healthBar.Visible = false
+    esp.healthBar.Color = Color3.fromRGB(0, 255, 0)
+    esp.healthBar.Thickness = 1
+    esp.healthBar.Filled = true
+    
+    esp.healthText = Drawing.new("Text")
+    esp.healthText.Visible = false
+    esp.healthText.Color = Color3.fromRGB(255, 255, 255)
+    esp.healthText.Size = 12
+    esp.healthText.Center = true
+    esp.healthText.Outline = true
+    esp.healthText.Font = 2
+    
+    esp.distance = Drawing.new("Text")
+    esp.distance.Visible = false
+    esp.distance.Color = Color3.fromRGB(255, 255, 255)
+    esp.distance.Size = 12
+    esp.distance.Center = true
+    esp.distance.Outline = true
+    esp.distance.Font = 2
+    
+    esp.player = targetPlayer
+    
+    espTable[targetPlayer] = esp
+    
+    return esp
+end
+
+local function removeESP(targetPlayer)
+    local esp = espTable[targetPlayer]
+    if esp then
+        if esp.box then esp.box:Remove() end
+        if esp.name then esp.name:Remove() end
+        if esp.healthBar then esp.healthBar:Remove() end
+        if esp.healthText then esp.healthText:Remove() end
+        if esp.distance then esp.distance:Remove() end
+        espTable[targetPlayer] = nil
+    end
+end
+
+local function updateESP(character, targetPlayer, esp)
+    if not character or not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") or character.Humanoid.Health <= 0 then
+        if esp then
+            esp.box.Visible = false
+            esp.name.Visible = false
+            esp.healthBar.Visible = false
+            esp.healthText.Visible = false
+            esp.distance.Visible = false
+        end
+        return
+    end
+    
+    local rootPart = character.HumanoidRootPart
+    
+    -- Distance check for performance
+    local distance = (rootPart.Position - camera.CFrame.Position).Magnitude
+    if distance > maxEspDistance then
+        if esp then
+            esp.box.Visible = false
+            esp.name.Visible = false
+            esp.healthBar.Visible = false
+            esp.healthText.Visible = false
+            esp.distance.Visible = false
+        end
+        return
+    end
+    
+    local position, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+    
+    if onScreen then
+        local scale = 1000 / position.Z
+        local size = Vector2.new(4 * scale, 5 * scale)
+        
+        -- Box
+        esp.box.Size = Vector2.new(size.X, size.Y * 1.6)
+        esp.box.Position = Vector2.new(position.X - size.X / 2, position.Y - size.Y / 2)
+        esp.box.Visible = espEnabled
+        esp.box.Color = getTeamColor(targetPlayer)
+        
+        -- Name
+        esp.name.Text = targetPlayer.Name
+        esp.name.Position = Vector2.new(position.X, position.Y - size.Y / 2 - 15)
+        esp.name.Visible = espEnabled
+        esp.name.Color = getTeamColor(targetPlayer)
+        
+        -- Health Bar
+        local healthPercent = character.Humanoid.Health / character.Humanoid.MaxHealth
+        local healthBarSize = Vector2.new(2, size.Y * 1.6)
+        local healthBarOffset = Vector2.new(position.X - size.X / 2 - 5, position.Y - size.Y / 2)
+        local healthBarFillSize = Vector2.new(2, healthBarSize.Y * healthPercent)
+        
+        esp.healthBar.Size = healthBarSize
+        esp.healthBar.Position = healthBarOffset
+        esp.healthBar.Visible = espEnabled
+        
+        esp.healthBar.Filled = true
+        esp.healthBar.Color = Color3.fromRGB(255 - 255 * healthPercent, 255 * healthPercent, 0)
+        
+        -- Health Text
+        esp.healthText.Text = tostring(math.floor(character.Humanoid.Health)) .. "/" .. tostring(math.floor(character.Humanoid.MaxHealth))
+        esp.healthText.Position = Vector2.new(position.X, position.Y + size.Y / 2 + 5)
+        esp.healthText.Visible = espEnabled
+        
+        -- Distance Text
+        esp.distance.Text = tostring(math.floor(distance)) .. " studs"
+        esp.distance.Position = Vector2.new(position.X, position.Y + size.Y / 2 + 20)
+        esp.distance.Visible = espEnabled
+    else
+        esp.box.Visible = false
+        esp.name.Visible = false
+        esp.healthBar.Visible = false
+        esp.healthText.Visible = false
+        esp.distance.Visible = false
+    end
+end
+
+local function findClosestPlayerToCursor()
+    local closestPlayer = nil
+    local closestDistance = fovCircle.Radius
+    local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+    
+    for _, targetPlayer in pairs(Players:GetPlayers()) do
+        if targetPlayer ~= player and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and 
+           targetPlayer.Character:FindFirstChild("Humanoid") and targetPlayer.Character.Humanoid.Health > 0 then
+            
+            if player.Team == nil or targetPlayer.Team == nil or player.Team ~= targetPlayer.Team then
+                local head = targetPlayer.Character:FindFirstChild("Head")
+                if head then
+                    local position, onScreen = camera:WorldToViewportPoint(head.Position)
+                    
+                    if onScreen then
+                        local distance = (Vector2.new(position.X, position.Y) - center).Magnitude
+                        
+                        if distance < closestDistance then
+                            closestDistance = distance
+                            closestPlayer = targetPlayer
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    if aimbotBotsEnabled then
+        updateBotCache()
+        
+        for _, bot in pairs(cachedBots) do
+            if bot:FindFirstChild("HumanoidRootPart") and bot:FindFirstChild("Humanoid") and bot.Humanoid.Health > 0 then
+                local head = bot:FindFirstChild("Head")
+                if head then
+                    local position, onScreen = camera:WorldToViewportPoint(head.Position)
+                    
+                    if onScreen then
+                        local distance = (Vector2.new(position.X, position.Y) - center).Magnitude
+                        
+                        if distance < closestDistance then
+                            closestDistance = distance
+                            closestPlayer = {Character = bot, Name = bot.Name, Team = getBotTeam(bot)}
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return closestPlayer
+end
+
+local function findClosestPlayerOverall()
+    local closestPlayer = nil
+    local closestDistance = math.huge
+    
+    for _, targetPlayer in pairs(Players:GetPlayers()) do
+        if targetPlayer ~= player and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and 
+           targetPlayer.Character:FindFirstChild("Humanoid") and targetPlayer.Character.Humanoid.Health > 0 then
+            
+            if player.Team == nil or targetPlayer.Team == nil or player.Team ~= targetPlayer.Team then
+                local rootPart = targetPlayer.Character.HumanoidRootPart
+                local distance = (rootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPlayer = targetPlayer
+                end
+            end
+        end
+    end
+    
+    if aimbotBotsEnabled then
+        updateBotCache()
+        
+        for _, bot in pairs(cachedBots) do
+            if bot:FindFirstChild("HumanoidRootPart") and bot:FindFirstChild("Humanoid") and bot.Humanoid.Health > 0 then
+                local rootPart = bot.HumanoidRootPart
+                local distance = (rootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPlayer = {Character = bot, Name = bot.Name, Team = getBotTeam(bot)}
+                end
+            end
+        end
+    end
+    
+    return closestPlayer
+end
+
+local function getAimPart(character)
+    if aimbotTargetPart == "Head" then
+        return character:FindFirstChild("Head")
+    elseif aimbotTargetPart == "HumanoidRootPart" then
+        return character:FindFirstChild("HumanoidRootPart")
+    else -- Random
+        local parts = {}
+        if character:FindFirstChild("Head") then table.insert(parts, character.Head) end
+        if character:FindFirstChild("HumanoidRootPart") then table.insert(parts, character.HumanoidRootPart) end
+        if character:FindFirstChild("UpperTorso") then table.insert(parts, character.UpperTorso) end
+        
+        if #parts > 0 then
+            return parts[math.random(1, #parts)]
+        else
+            return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+        end
+    end
+end
+
+local function aimAt(target, smoothness)
+    if not target or not target.Character then return end
+    
+    local aimPart = getAimPart(target.Character)
+    if not aimPart then return end
+    
+    local currentCameraCFrame = camera.CFrame
+    local targetPosition = aimPart.Position
+    
+    if aimbotMethod == "Tween" then
+        local delta = (targetPosition - currentCameraCFrame.Position).Unit
+        local smoothDelta = (currentCameraCFrame.LookVector + (delta - currentCameraCFrame.LookVector) / smoothness).Unit
+        camera.CFrame = CFrame.new(currentCameraCFrame.Position, currentCameraCFrame.Position + smoothDelta * 10)
+    else
+        camera.CFrame = CFrame.new(currentCameraCFrame.Position, targetPosition)
+    end
+end
+
+-- Keybind handling
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode[aimbotKeybind] then
+        if aimbotHoldToAim then
+            aimbotActive = true
+        else
+            aimbotActive = not aimbotActive
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode[aimbotKeybind] and aimbotHoldToAim then
+        aimbotActive = false
+    end
+end)
+
+-- Cleanup function
+function cleanup()
+    if fovCircle then
+        fovCircle:Remove()
+    end
+    
+    for _, esp in pairs(espTable) do
+        if esp then
+            if esp.box then esp.box:Remove() end
+            if esp.name then esp.name:Remove() end
+            if esp.healthBar then esp.healthBar:Remove() end
+            if esp.healthText then esp.healthText:Remove() end
+            if esp.distance then esp.distance:Remove() end
+        end
+    end
+    
+    espTable = {}
+end
+
+-- Main Loop
+RunService.RenderStepped:Connect(function()
+    -- Update FOV circle position
+    fovCircle.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+    
+    -- Update ESP with frame skipping for performance
+    espFrameSkip = (espFrameSkip + 1) % espUpdateInterval
+    if espFrameSkip == 0 and espEnabled then
+        for _, targetPlayer in pairs(Players:GetPlayers()) do
+            if targetPlayer ~= player then
+                if targetPlayer.Character then
+                    if not espTable[targetPlayer] then
+                        createESP(targetPlayer.Character, targetPlayer)
+                    end
+                    
+                    local esp = espTable[targetPlayer]
+                    if esp then
+                        updateESP(targetPlayer.Character, targetPlayer, esp)
+                    end
+                else
+                    removeESP(targetPlayer)
+                end
+            end
+        end
+        
+        if espBotsEnabled then
+            updateBotCache()
+            
+            for _, bot in pairs(cachedBots) do
+                local pseudoPlayer = {Name = bot.Name, Team = getBotTeam(bot)}
+                
+                if not espTable[pseudoPlayer] then
+                    createESP(bot, pseudoPlayer)
+                end
+                
+                local esp = espTable[pseudoPlayer]
+                if esp then
+                    updateESP(bot, pseudoPlayer, esp)
+                end
+            end
+        end
+    end
+    
+    -- Auto Aim with frame skipping for performance
+    aimbotFrameSkip = (aimbotFrameSkip + 1) % aimbotUpdateInterval
+    if aimbotFrameSkip == 0 and aimbotEnabled and (aimbotActive or not aimbotHoldToAim) then
+        local closestPlayer
+        if aimbotMode == "FOV" then
+            closestPlayer = findClosestPlayerToCursor()
+        else
+            closestPlayer = findClosestPlayerOverall()
+        end
+        
+        if closestPlayer then
+            currentTarget = closestPlayer
+            aimAt(closestPlayer, aimSmoothness)
+        else
+            currentTarget = nil
+        end
+    end
+end)
+
+-- Initialize ESP for existing players
+for _, targetPlayer in pairs(Players:GetPlayers()) do
+    if targetPlayer ~= player and targetPlayer.Character then
+        createESP(targetPlayer.Character, targetPlayer)
+    end
+end
+
+-- Handle player removal
+Players.PlayerRemoving:Connect(function(targetPlayer)
+    removeESP(targetPlayer)
+end)
+
+-- Bot update loop
+spawn(function()
+    while true do
+        updateBotCache()
+        wait(botUpdateInterval)
+    end
+end)
+
+-- Add a welcome message
+Window:Prompt({
+    Mode = "Confirm",
+    Title = "Optimized Hack Suite",
+    Content = "Optimized script loaded successfully!\n\nFeatures:\n- Enhanced Aimbot for Bots\n- ESP with Health Bars and Distance\n- Performance Optimized\n- Bot Detection every " .. tostring(botUpdateInterval) .. " second(s)",
+    Actions = {
+        Confirm = {
+            Name = "OK",
+            Callback = function() end
+        }
+    }
+})
+
+-- Game close cleanup
+game:GetService("CoreGui").ChildRemoved:Connect(function(child)
+    if child.Name == "Rayfield" then
+        cleanup()
+    end
+end)
